@@ -5,6 +5,7 @@ WORKDIR /app
 
 # Install dependencies required for compiling Rust crypto/SSL crates
 RUN apt-get update && apt-get install -y \
+  curl \
   pkg-config \
   libssl-dev \
   && rm -rf /var/lib/apt/lists/*
@@ -12,28 +13,26 @@ RUN apt-get update && apt-get install -y \
 # Copy your source code
 COPY . .
 
-# Build the release binary 
+# Build the release binary
 # (This creates /target/release/backend)
 RUN cargo build --release
+
+# Install Stellar CLI in the builder (which has Rust/cargo available)
+RUN curl -Lsf https://raw.githubusercontent.com/stellar/stellar-cli/main/install.sh | sh
 
 # --- Stage 2: Runtime (Production Environment) ---
 FROM debian:bookworm-slim
 
 WORKDIR /app
 
-# 1. Install runtime dependencies for SSL and the installer
+# 1. Install runtime dependencies for SSL
 RUN apt-get update && apt-get install -y \
-  curl \
   ca-certificates \
   libssl3 \
   && rm -rf /var/lib/apt/lists/*
 
-# 2. Install Stellar CLI and Move to Global PATH
-# This is the "OS Error 2" fix for Render. 
-# It ensures Command::new("stellar") works in your Rust code.
-RUN curl -Lsf https://raw.githubusercontent.com/stellar/stellar-cli/main/install.sh | sh && \
-  mv /root/.cargo/bin/stellar /usr/local/bin/stellar && \
-  chmod +x /usr/local/bin/stellar
+# 2. Copy the Stellar CLI binary from the builder stage
+COPY --from=builder /root/.cargo/bin/stellar /usr/local/bin/stellar
 
 # 3. Copy only the compiled binary from the builder stage
 COPY --from=builder /app/target/release/backend /usr/local/bin/ayuda-backend
